@@ -103,25 +103,30 @@ export default function DashboardPage() {
     algoRefs.current.dp = null
     algoRefs.current.greedy = null
 
-    switch (selectedAlgorithm) {
-      case 'mcts':
-        algoRefs.current.mcts = new MctsAlgorithm(
-          { simulationsCount: 300, maxDepth: 2 },
-          silentLogger
-        )
-        break
-      case 'minimax':
-        algoRefs.current.minimax = new MinimaxAlgorithm({ maxDepth: 3 }, silentLogger)
-        break
-      case 'dp':
-        algoRefs.current.dp = new DPAlgorithm({ maxHorizon: 4 }, silentLogger)
-        break
-      case 'greedy':
-        algoRefs.current.greedy = new GreedyAlgorithm(undefined, silentLogger)
-        break
-      // 'manual' has no special instantiation
-      default:
-        break
+    try {
+      switch (selectedAlgorithm) {
+        case 'mcts':
+          algoRefs.current.mcts = new MctsAlgorithm(
+            { simulationsCount: 300, maxDepth: 2 },
+            silentLogger
+          )
+          break
+        case 'minimax':
+          algoRefs.current.minimax = new MinimaxAlgorithm({ maxDepth: 3 }, silentLogger)
+          break
+        case 'dp':
+          algoRefs.current.dp = new DPAlgorithm({ maxHorizon: 4 }, silentLogger)
+          break
+        case 'greedy':
+          algoRefs.current.greedy = new GreedyAlgorithm(undefined, silentLogger)
+          break
+        // 'manual' has no special instantiation
+        default:
+          break
+      }
+    } catch (err) {
+      console.error('[Dashboard] failed to initialize algorithm:', err)
+      setLocalError('Failed to initialize selected algorithm.')
     }
   }, [selectedAlgorithm])
 
@@ -226,61 +231,66 @@ export default function DashboardPage() {
   ])
 
   const getRecommendedMove = useCallback((): GigaverseActionType | null => {
-    const ds = useGigaverseStore.getState().dungeonState
-    if (!ds?.run) return null
-    if (selectedAlgorithm === 'manual') return null
+    try {
+      const ds = useGigaverseStore.getState().dungeonState
+      if (!ds?.run) return null
+      if (selectedAlgorithm === 'manual') return null
 
-    // Random: pick any valid move at random.
-    if (selectedAlgorithm === 'random') {
-      const possible: GigaverseActionType[] = []
-      if (ds.run?.lootPhase && ds.run.lootOptions?.length) {
-        const lootActions = [
-          GigaverseActionType.PICK_LOOT_ONE,
-          GigaverseActionType.PICK_LOOT_TWO,
-          GigaverseActionType.PICK_LOOT_THREE,
-          GigaverseActionType.PICK_LOOT_FOUR,
-        ]
-        for (let i = 0; i < Math.min(ds.run.lootOptions.length, lootActions.length); i++) {
-          possible.push(lootActions[i])
+      // Random: pick any valid move at random.
+      if (selectedAlgorithm === 'random') {
+        const possible: GigaverseActionType[] = []
+        if (ds.run?.lootPhase && ds.run.lootOptions?.length) {
+          const lootActions = [
+            GigaverseActionType.PICK_LOOT_ONE,
+            GigaverseActionType.PICK_LOOT_TWO,
+            GigaverseActionType.PICK_LOOT_THREE,
+            GigaverseActionType.PICK_LOOT_FOUR,
+          ]
+          for (let i = 0; i < Math.min(ds.run.lootOptions.length, lootActions.length); i++) {
+            possible.push(lootActions[i])
+          }
+        } else {
+          possible.push(
+            GigaverseActionType.MOVE_ROCK,
+            GigaverseActionType.MOVE_PAPER,
+            GigaverseActionType.MOVE_SCISSOR
+          )
         }
-      } else {
-        possible.push(
-          GigaverseActionType.MOVE_ROCK,
-          GigaverseActionType.MOVE_PAPER,
-          GigaverseActionType.MOVE_SCISSOR
-        )
+        return possible[Math.floor(Math.random() * possible.length)] ?? null
       }
-      return possible[Math.floor(Math.random() * possible.length)]
+
+      // Build the engine-friendly state
+      const gameData = useGameDataStore.getState()
+      const actionData = buildGigaverseRunState(ds, gameData.enemies, {
+        skillDefinitions: gameData.skillDefinitions,
+        skillProgress: gameData.skillProgress,
+      })
+
+      // MCTS
+      if (selectedAlgorithm === 'mcts' && algoRefs.current.mcts) {
+        return algoRefs.current.mcts.pickAction(actionData).type
+      }
+
+      // Minimax
+      if (selectedAlgorithm === 'minimax' && algoRefs.current.minimax) {
+        return algoRefs.current.minimax.pickAction(actionData).type
+      }
+
+      // DP
+      if (selectedAlgorithm === 'dp' && algoRefs.current.dp) {
+        return algoRefs.current.dp.pickAction(actionData).type
+      }
+
+      // Greedy
+      if (selectedAlgorithm === 'greedy' && algoRefs.current.greedy) {
+        return algoRefs.current.greedy.pickAction(actionData).type
+      }
+
+      return null
+    } catch (err) {
+      console.error('[Dashboard] getRecommendedMove error:', err)
+      return null
     }
-
-    // Build the engine-friendly state
-    const gameData = useGameDataStore.getState()
-    const actionData = buildGigaverseRunState(ds, gameData.enemies, {
-      skillDefinitions: gameData.skillDefinitions,
-      skillProgress: gameData.skillProgress,
-    })
-
-    // MCTS
-    if (selectedAlgorithm === 'mcts' && algoRefs.current.mcts) {
-      return algoRefs.current.mcts.pickAction(actionData).type
-    }
-
-    // Minimax
-    if (selectedAlgorithm === 'minimax' && algoRefs.current.minimax) {
-      return algoRefs.current.minimax.pickAction(actionData).type
-    }
-
-    // DP
-    if (selectedAlgorithm === 'dp' && algoRefs.current.dp) {
-      return algoRefs.current.dp.pickAction(actionData).type
-    }
-
-    // Greedy
-    if (selectedAlgorithm === 'greedy' && algoRefs.current.greedy) {
-      return algoRefs.current.greedy.pickAction(actionData).type
-    }
-
-    return null
   }, [selectedAlgorithm])
 
   const handlePlayMove = useCallback(
