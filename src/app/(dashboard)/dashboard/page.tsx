@@ -231,6 +231,36 @@ export default function DashboardPage() {
   ])
 
   const getRecommendedMove = useCallback((): GigaverseActionType | null => {
+    const getFallbackMove = (): GigaverseActionType | null => {
+      const ds = useGigaverseStore.getState().dungeonState
+      if (!ds?.run) return null
+
+      if (ds.run.lootPhase && ds.run.lootOptions?.length) {
+        const lootActions = [
+          GigaverseActionType.PICK_LOOT_ONE,
+          GigaverseActionType.PICK_LOOT_TWO,
+          GigaverseActionType.PICK_LOOT_THREE,
+          GigaverseActionType.PICK_LOOT_FOUR,
+        ]
+        return lootActions[0] ?? null
+      }
+
+      const player = ds.run.players[0]
+      const moves = [
+        { action: GigaverseActionType.MOVE_ROCK, stats: player.rock },
+        { action: GigaverseActionType.MOVE_PAPER, stats: player.paper },
+        { action: GigaverseActionType.MOVE_SCISSOR, stats: player.scissor },
+      ]
+        .filter((move) => (move.stats?.currentCharges ?? 0) > 0)
+        .sort(
+          (a, b) =>
+            (b.stats?.currentATK ?? 0) - (a.stats?.currentATK ?? 0) ||
+            (b.stats?.currentDEF ?? 0) - (a.stats?.currentDEF ?? 0)
+        )
+
+      return moves[0]?.action ?? null
+    }
+
     try {
       const ds = useGigaverseStore.getState().dungeonState
       if (!ds?.run) return null
@@ -268,28 +298,28 @@ export default function DashboardPage() {
 
       // MCTS
       if (selectedAlgorithm === 'mcts' && algoRefs.current.mcts) {
-        return algoRefs.current.mcts.pickAction(actionData).type
+        return algoRefs.current.mcts.pickAction(actionData).type ?? getFallbackMove()
       }
 
       // Minimax
       if (selectedAlgorithm === 'minimax' && algoRefs.current.minimax) {
-        return algoRefs.current.minimax.pickAction(actionData).type
+        return algoRefs.current.minimax.pickAction(actionData).type ?? getFallbackMove()
       }
 
       // DP
       if (selectedAlgorithm === 'dp' && algoRefs.current.dp) {
-        return algoRefs.current.dp.pickAction(actionData).type
+        return algoRefs.current.dp.pickAction(actionData).type ?? getFallbackMove()
       }
 
       // Greedy
       if (selectedAlgorithm === 'greedy' && algoRefs.current.greedy) {
-        return algoRefs.current.greedy.pickAction(actionData).type
+        return algoRefs.current.greedy.pickAction(actionData).type ?? getFallbackMove()
       }
 
-      return null
+      return getFallbackMove()
     } catch (err) {
       console.error('[Dashboard] getRecommendedMove error:', err)
-      return null
+      return getFallbackMove()
     }
   }, [selectedAlgorithm])
 
@@ -327,8 +357,11 @@ export default function DashboardPage() {
       while (autoPlayRef.current && steps > 0) {
         if (await checkRunOverAndRefresh()) break
         const move = getRecommendedMove()
-        // Stop if the algorithm has no move (like in the middle of manual usage)
-        if (!move) break
+        if (!move) {
+          setAutoPlay(false)
+          setLocalError('Auto-Play stopped: no valid move was available.')
+          break
+        }
 
         await handlePlayMove(move)
         await new Promise((res) => setTimeout(res, 40)) // short delay
