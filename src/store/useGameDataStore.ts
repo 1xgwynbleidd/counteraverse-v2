@@ -2,7 +2,12 @@
 'use client'
 
 import { create } from 'zustand'
-import { getOffchainStaticAction, getDungeonTodayAction } from '@/actions/gigaverseActions'
+import {
+  getOffchainStaticAction,
+  getDungeonTodayAction,
+  getAllSkillsAction,
+  getHeroSkillsProgressAction,
+} from '@/actions/gigaverseActions'
 import type {
   EnemyEntity,
   OffchainGameItemEntity,
@@ -10,6 +15,8 @@ import type {
   CheckpointEntity,
   OffchainConstants,
   TodayDungeonDataEntity,
+  SkillDefinition,
+  SkillsProgressEntity,
 } from '@slkzgm/gigaverse-sdk'
 
 function buildItemMap(items: OffchainGameItemEntity[]): Record<number, OffchainGameItemEntity> {
@@ -36,6 +43,8 @@ interface GameDataState {
   recipes: RecipeEntity[]
   checkpoints: CheckpointEntity[]
   constants: OffchainConstants | null
+  skillDefinitions: SkillDefinition[]
+  skillProgress: SkillsProgressEntity[]
   itemsMap: Record<number, OffchainGameItemEntity>
   todayDungeonsMap: Record<number, TodayDungeonDataEntity>
 
@@ -44,6 +53,7 @@ interface GameDataState {
 
   loadOffchainStatic: (token: string) => Promise<void>
   loadTodayDungeonData: (token: string) => Promise<void>
+  loadSkills: (token: string, noobId: string) => Promise<void>
 }
 
 export const useGameDataStore = create<GameDataState>((set) => ({
@@ -52,6 +62,8 @@ export const useGameDataStore = create<GameDataState>((set) => ({
   recipes: [],
   checkpoints: [],
   constants: null,
+  skillDefinitions: [],
+  skillProgress: [],
 
   itemsMap: {},
   todayDungeonsMap: {},
@@ -99,6 +111,23 @@ export const useGameDataStore = create<GameDataState>((set) => ({
             ? err.message
             : 'Failed to load dungeon daily data (todayDungeonsMap).',
       })
+    }
+  },
+
+  async loadSkills(token, noobId) {
+    if (!noobId) return
+    try {
+      const [definitionsResp, progressResp] = await Promise.all([
+        getAllSkillsAction(token),
+        getHeroSkillsProgressAction(token, noobId),
+      ])
+
+      set({
+        skillDefinitions: definitionsResp.entities ?? [],
+        skillProgress: progressResp.entities ?? [],
+      })
+    } catch (err) {
+      console.error('[useGameDataStore] loadSkills error:', err)
     }
   },
 }))

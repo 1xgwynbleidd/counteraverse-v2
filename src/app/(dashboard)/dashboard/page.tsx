@@ -30,6 +30,8 @@ import { RunRecapPanel } from '@/app/(dashboard)/_components/run-recap-panel'
 import { RomManagerPanel } from '@/app/(dashboard)/_components/rom-manager-panel'
 import { RunTabsPanel } from '@/app/(dashboard)/_components/run-tabs-panel'
 
+const AUTO_START_THRESHOLD_ENERGY = 240
+
 export default function DashboardPage() {
   const { bearerToken } = useAuthStore()
   const {
@@ -47,13 +49,21 @@ export default function DashboardPage() {
   const {
     loadOffchainStatic,
     loadTodayDungeonData,
+    loadSkills,
     enemies,
     gameItems,
     todayDungeonsMap,
     isLoading,
     error,
   } = useGameDataStore()
-  const { selectedAlgorithm, autoPlay, setAutoPlay } = useAlgorithmStore()
+  const {
+    selectedAlgorithm,
+    autoPlay,
+    autoStartConfig,
+    setAutoPlay,
+    setAutoStartConfig,
+    clearAutoStartConfig,
+  } = useAlgorithmStore()
   const { addRun } = useRunHistoryStore()
 
   const [localError, setLocalError] = useState('')
@@ -75,6 +85,7 @@ export default function DashboardPage() {
   })
 
   const isAutoPlayingRef = useRef(false)
+  const isAutoStartingRunRef = useRef(false)
 
   const currentDungeonNameRef = useRef('')
   const currentDungeonIsJuicedRef = useRef(false)
@@ -122,6 +133,9 @@ export default function DashboardPage() {
     loadTodayDungeonData(bearerToken)
     loadDayProgress(bearerToken)
     loadEnergy(bearerToken)
+    if (noobId) {
+      loadSkills(bearerToken, noobId)
+    }
 
     return () => {
       stopEnergyTimer()
@@ -133,8 +147,10 @@ export default function DashboardPage() {
     gameItems,
     loadOffchainStatic,
     loadTodayDungeonData,
+    loadSkills,
     loadDayProgress,
     loadEnergy,
+    noobId,
     stopEnergyTimer,
   ])
 
@@ -238,7 +254,11 @@ export default function DashboardPage() {
     }
 
     // Build the engine-friendly state
-    const actionData = buildGigaverseRunState(ds, useGameDataStore.getState().enemies)
+    const gameData = useGameDataStore.getState()
+    const actionData = buildGigaverseRunState(ds, gameData.enemies, {
+      skillDefinitions: gameData.skillDefinitions,
+      skillProgress: gameData.skillProgress,
+    })
 
     // MCTS
     if (selectedAlgorithm === 'mcts' && algoRefs.current.mcts) {
@@ -318,7 +338,7 @@ export default function DashboardPage() {
     }
   }, [autoPlay, runAutoPlayChain])
 
-  async function handleStartRun(dungeonId: number, isJuiced: boolean) {
+  const handleStartRun = useCallback(async (dungeonId: number, isJuiced: boolean) => {
     if (!bearerToken) return
     setLocalError('')
     try {
@@ -349,7 +369,92 @@ export default function DashboardPage() {
       console.error('[Dashboard] handleStartRun error:', err)
       setLocalError(err instanceof Error ? err.message : 'Unknown error starting run.')
     }
+  }, [bearerToken, incrementRunCount, loadEnergy, todayDungeonsMap])
+
+  let currentEnergyInt = 0
+  let isPlayerJuiced = false
+  if (energyData) {
+    currentEnergyInt = Math.floor(energyData.energy / 1_000_000_000)
+    isPlayerJuiced = energyData.isPlayerJuiced
   }
+
+  const handleToggleAutoStart = useCallback(
+    (dungeonId: number, isJuiced: boolean) => {
+      const isActive =
+        autoStartConfig?.dungeonId === dungeonId && autoStartConfig.isJuiced === isJuiced
+
+      if (isActive) {
+        clearAutoStartConfig()
+        return
+      }
+
+      if (selectedAlgorithm === 'manual') {
+        setLocalError('Select GREEDY, DP, MCTS, MINIMAX, or RANDOM before enabling Auto 240.')
+        return
+      }
+
+      setLocalError('')
+      setAutoStartConfig({
+        dungeonId,
+        isJuiced,
+        thresholdEnergy: AUTO_START_THRESHOLD_ENERGY,
+      })
+    },
+    [autoStartConfig, clearAutoStartConfig, selectedAlgorithm, setAutoStartConfig]
+  )
+
+  useEffect(() => {
+    if (!autoStartConfig || !bearerToken) return
+    if (selectedAlgorithm === 'manual') return
+    if (dungeonState?.run) return
+    if (isAutoPlayingRef.current || isAutoStartingRunRef.current) return
+    if (currentEnergyInt < autoStartConfig.thresholdEnergy) return
+
+    const queuedDungeon = todayDungeonsMap[autoStartConfig.dungeonId]
+    if (!queuedDungeon) return
+
+    const runsUsed = dayProgressMap[autoStartConfig.dungeonId] || 0
+    const effectiveMax = isPlayerJuiced
+      ? queuedDungeon.juicedMaxRunsPerDay
+      : queuedDungeon.UINT256_CID
+    const hasRunSlot = autoStartConfig.isJuiced
+      ? isPlayerJuiced && runsUsed + 3 <= queuedDungeon.juicedMaxRunsPerDay
+      : runsUsed < effectiveMax
+    const runCost = autoStartConfig.isJuiced
+      ? queuedDungeon.ENERGY_CID * 3
+      : queuedDungeon.ENERGY_CID
+
+    if (!hasRunSlot || currentEnergyInt < runCost) return
+
+    async function startQueuedRun() {
+      isAutoStartingRunRef.current = true
+      try {
+        await handleStartRun(autoStartConfig!.dungeonId, autoStartConfig!.isJuiced)
+
+        const startedRun = useGigaverseStore.getState().dungeonState?.run
+        if (startedRun && useAlgorithmStore.getState().selectedAlgorithm !== 'manual') {
+          setAutoPlay(true)
+        }
+      } catch (err) {
+        console.error('[Dashboard] auto start error:', err)
+      } finally {
+        isAutoStartingRunRef.current = false
+      }
+    }
+
+    startQueuedRun()
+  }, [
+    autoStartConfig,
+    bearerToken,
+    currentEnergyInt,
+    dayProgressMap,
+    dungeonState?.run,
+    handleStartRun,
+    isPlayerJuiced,
+    selectedAlgorithm,
+    setAutoPlay,
+    todayDungeonsMap,
+  ])
 
   async function refreshAll() {
     if (!bearerToken) return
@@ -365,13 +470,6 @@ export default function DashboardPage() {
       console.error('[Dashboard] refreshAll error:', err)
       setLocalError('Failed to refresh all data.')
     }
-  }
-
-  let currentEnergyInt = 0
-  let isPlayerJuiced = false
-  if (energyData) {
-    currentEnergyInt = Math.floor(energyData.energy / 1_000_000_000)
-    isPlayerJuiced = energyData.isPlayerJuiced
   }
 
   return (
@@ -447,7 +545,9 @@ export default function DashboardPage() {
                   dayProgressMap={dayProgressMap}
                   currentEnergy={currentEnergyInt}
                   isPlayerJuiced={isPlayerJuiced}
+                  autoStartConfig={autoStartConfig}
                   onStartRun={handleStartRun}
+                  onToggleAutoStart={handleToggleAutoStart}
                 />
               )}
             </div>

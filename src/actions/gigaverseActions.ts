@@ -9,6 +9,8 @@ import {
   GameItemBalanceChange,
   GetDungeonTodayResponse,
   GetOffchainStaticResponse,
+  GetAllSkillsResponse,
+  GetSkillsProgressResponse,
   StartRunPayload,
   GetUserRomsResponse,
   ClaimRomPayload,
@@ -298,6 +300,19 @@ export async function getOffchainStaticAction(token: string): Promise<GetOffchai
 export async function getDungeonTodayAction(token: string): Promise<GetDungeonTodayResponse> {
   const client = createClient(token)
   return client.getDungeonToday()
+}
+
+export async function getAllSkillsAction(token: string): Promise<GetAllSkillsResponse> {
+  const client = createClient(token)
+  return client.getAllSkills()
+}
+
+export async function getHeroSkillsProgressAction(
+  token: string,
+  noobId: string
+): Promise<GetSkillsProgressResponse> {
+  const client = createClient(token)
+  return client.getHeroSkillsProgress(noobId)
 }
 
 /**
