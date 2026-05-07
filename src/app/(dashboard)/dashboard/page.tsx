@@ -117,7 +117,7 @@ export default function DashboardPage() {
         algoRefs.current.dp = new DPAlgorithm({ maxHorizon: 4 }, silentLogger)
         break
       case 'greedy':
-        algoRefs.current.greedy = new GreedyAlgorithm({ atkWeight: 2.0 }, silentLogger)
+        algoRefs.current.greedy = new GreedyAlgorithm(undefined, silentLogger)
         break
       // 'manual' has no special instantiation
       default:
