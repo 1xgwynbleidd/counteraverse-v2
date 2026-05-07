@@ -246,16 +246,31 @@ export default function DashboardPage() {
       }
 
       const player = ds.run.players[0]
+      const strongestAttack = Math.max(
+        player.rock?.currentATK ?? 0,
+        player.paper?.currentATK ?? 0,
+        player.scissor?.currentATK ?? 0
+      )
       const moves = [
         { action: GigaverseActionType.MOVE_ROCK, stats: player.rock },
         { action: GigaverseActionType.MOVE_PAPER, stats: player.paper },
         { action: GigaverseActionType.MOVE_SCISSOR, stats: player.scissor },
       ]
         .filter((move) => (move.stats?.currentCharges ?? 0) > 0)
+        .map((move) => {
+          const attack = move.stats?.currentATK ?? 0
+          const defense = move.stats?.currentDEF ?? 0
+          const charges = move.stats?.currentCharges ?? 0
+          const isStrongest = attack === strongestAttack
+          const cooldownPenalty = charges === 1 ? attack * (isStrongest ? 260 : 120) : 0
+
+          return {
+            ...move,
+            score: attack * 100 + defense * 22 + charges * 80 - cooldownPenalty,
+          }
+        })
         .sort(
-          (a, b) =>
-            (b.stats?.currentATK ?? 0) - (a.stats?.currentATK ?? 0) ||
-            (b.stats?.currentDEF ?? 0) - (a.stats?.currentDEF ?? 0)
+          (a, b) => b.score - a.score
         )
 
       return moves[0]?.action ?? null
