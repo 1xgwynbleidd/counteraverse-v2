@@ -2,6 +2,7 @@
 'use client'
 
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 export type AlgorithmType = 'manual' | 'mcts' | 'minimax' | 'dp' | 'greedy' | 'random'
 
@@ -21,24 +22,35 @@ interface AlgorithmState {
   clearAutoStartConfig: () => void
 }
 
-export const useAlgorithmStore = create<AlgorithmState>((set) => ({
-  selectedAlgorithm: 'manual',
-  autoPlay: false,
-  autoStartConfig: null,
+export const useAlgorithmStore = create<AlgorithmState>()(
+  persist(
+    (set) => ({
+      selectedAlgorithm: 'manual',
+      autoPlay: false,
+      autoStartConfig: null,
 
-  setAlgorithm: (algo) => {
-    set({ selectedAlgorithm: algo, autoPlay: false })
-  },
+      setAlgorithm: (algo) => {
+        set({ selectedAlgorithm: algo, autoPlay: false })
+      },
 
-  setAutoPlay: (val) => {
-    set({ autoPlay: val })
-  },
+      setAutoPlay: (val) => {
+        set({ autoPlay: val })
+      },
 
-  setAutoStartConfig: (config) => {
-    set({ autoStartConfig: config })
-  },
+      setAutoStartConfig: (config) => {
+        set({ autoStartConfig: config })
+      },
 
-  clearAutoStartConfig: () => {
-    set({ autoStartConfig: null })
-  },
-}))
+      clearAutoStartConfig: () => {
+        set({ autoStartConfig: null })
+      },
+    }),
+    {
+      name: 'algorithm-storage',
+      partialize: (state) => ({
+        selectedAlgorithm: state.selectedAlgorithm,
+        autoStartConfig: state.autoStartConfig,
+      }),
+    }
+  )
+)
